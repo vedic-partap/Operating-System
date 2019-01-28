@@ -1,0 +1,55 @@
++++ How to use +++
+
+Compile :
+$ g++ -Wall -std=c++11 shell.cpp -o shell
+
+Run
+
+$ ./shell
+
+Example :
+-----------------------------------------------
+-----------------------------------------------
+
+----------  Welcome to Group 3 Shell ----------
+
+-----------------------------------------------
+-----------------------------------------------
+
+[user] >>> ls
+copy.txt  out  out.txt	p1.txt	p2  p2.txt  Report.txt	shell  shell.cpp  test	test_win.cpp  test_woin.cpp
+[user] >>> ls > lsout.txt
+[user] >>> cat < lsout.txt   
+copy.txt
+lsout.txt
+out
+out.txt
+p1.txt
+p2
+p2.txt
+Report.txt
+shell
+shell.cpp
+test
+test_win.cpp
+test_woin.cpp
+[user] >>> cat < lsout.txt | sort | cat > catout.txt
+[user] >>> cat catout.txt
+copy.txt
+lsout.txt
+out
+out.txt
+p1.txt
+p2
+p2.txt
+Report.txt
+shell
+shell.cpp
+test
+test_win.cpp
+test_woin.cpp
+[user] >>> ls | wc -l
+14
+[user] >>> ls | wc -l &
+[ Process ] Background
+[user] >>> 14
