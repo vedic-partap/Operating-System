@@ -1,11 +1,11 @@
 +++ How to use +++
 
 Compile :
-$ g++ -Wall -std=c++11 shell.cpp -o shell
+$ g++ -Wall -std=c++11 Ass2_3.cpp -o Ass2_3
 
 Run
 
-$ ./shell
+$ ./Ass2_3
 
 Example :
 -----------------------------------------------
