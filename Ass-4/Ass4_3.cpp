@@ -16,6 +16,7 @@ using namespace std;
 queue<int> buffer;
 vector<int> status(100,0);
 pthread_t workers[MAX_THREAD],scheduler,reporter;
+pthread_mutex_t lock;
 
 void suspend(int id)
 {
@@ -27,6 +28,27 @@ void resume(int id)
     ;
 }
 
+void producer(){
+    for(int i=0;i<NUM;i++)
+        {
+            // printf("buffer size %d\n",buffer.size());
+            while(buffer.size()>=MAX_QUEUE_SIZE);
+            pthread_mutex_lock(&lock);
+            buffer.push(rand()%100);
+            pthread_mutex_unlock(&lock);
+        }
+}
+
+void consumer(){
+    while(1)
+        {
+            while(buffer.size()<=0);
+            pthread_mutex_lock(&lock);
+            buffer.pop();
+            pthread_mutex_unlock(&lock);
+        }
+}
+
 void * work(void* args)
 {
     int id = *(int*)args;
@@ -34,20 +56,11 @@ void * work(void* args)
     // printf("x = %d\n",x);
     if(x==0)
     {
-        for(int i=0;i<NUM;i++)
-        {
-            // printf("buffer size %d\n",buffer.size());
-            while(buffer.size()>=MAX_QUEUE_SIZE);
-            buffer.push(rand()%100);
-        }
+        producer();
     }
     else
     {
-        while(1)
-        {
-            while(buffer.size()<=0);
-            buffer.pop();
-        }
+        consumer();
     }
     
     status[id] = TERMINATED;
@@ -56,7 +69,7 @@ void * work(void* args)
 
 void * schedule(void* args)
 {
-    sleep(0.01);
+    sleep(0.1);
     queue<int> ready;
     int n = *(int *)args,i;
     for(i=0;i<n;i++)
@@ -84,7 +97,6 @@ void * schedule(void* args)
         else
         {
             int current = ready.front();
-            printf("%d\n", current);
             ready.pop();
             status[current] = RUNNING;
             pthread_kill(workers[current], SIGUSR2);
@@ -136,6 +148,12 @@ int main()
         printf("Please enter the value less than 20\n");
         return 0;
     }
+
+    if (pthread_mutex_init(&lock, NULL) != 0) 
+    { 
+        printf("\n mutex init has failed\n"); 
+        return 1; 
+    } 
     // status.resize(n);
     srand(time(NULL));
     int args[n];
