@@ -1,0 +1,56 @@
+Implement a CPU scheduler on top of Linux using
+threads and compare scheduling algorithms
++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Task : 
+    Generate N concurrent threads. Each can be Producer and Consumer. (Worker Threads)
+    Create the scheduler threads schedule the worker threads using Round Robin method.
+    Create the Reporter thread for printing the change of status of different worker threads.
+
+Implementation :
+    Function used :
+        pthread_create : To create the thread 
+        pthread_kill : To send the signal to specified thread
+        pthread_join : To wait for the thread to complete 
+        signal() : For installing signal Handler 
+        pthread_exit() : Exit from thread
+    Shared Memory : The variables are declared globally so that they can be accessed by each thread. 
+
+
+Contribution : 
+Vedic Partap (16CS10053) 
+    Creating workers threads
+    Create Scheduler thread
+Rahul Kumar (16CS10042)
+    Creating Reporter and Signal Handlers
+    Create Report 
+How to Run : 
+$ g++ Ass4_3.cpp -lpthread -o thread
+$./thread
+
+Sample Output : 
+0: SUSPENDED -> RUNNING
+0: RUNNING -> TERMINATED
+2: SUSPENDED -> RUNNING
+2: RUNNING -> SUSPENDED
+3: SUSPENDED -> RUNNING
+1: SUSPENDED -> RUNNING
+1: RUNNING -> SUSPENDED
+2: SUSPENDED -> RUNNING
+2: RUNNING -> SUSPENDED
+3: SUSPENDED -> RUNNING
+3: RUNNING -> SUSPENDED
+1: SUSPENDED -> RUNNING
+1: RUNNING -> SUSPENDED
+2: SUSPENDED -> RUNNING
+2: RUNNING -> SUSPENDED
+3: SUSPENDED -> RUNNING
+3: RUNNING -> SUSPENDED
+1: SUSPENDED -> RUNNING
+1: RUNNING -> SUSPENDED
+2: SUSPENDED -> RUNNING
+2: RUNNING -> SUSPENDED
+3: SUSPENDED -> RUNNING
+3: RUNNING -> SUSPENDED
+
+
