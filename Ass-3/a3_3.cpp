@@ -200,7 +200,7 @@ int main(int argc, char *argv[])
     double arrival[n], burst[n], lower_limit = exp(-10.0*MEAN);
     for(int i=0;i<n;i++)
     {
-        double r = lower_limit+ ((double)(rand()%10)/10.0)*(1.0-lower_limit);
+        double r = lower_limit+ ((double)(rand())/RAND_MAX)*(1.0-lower_limit);
 
         arrival[i] = ((i == 0) ? 0 : -1.0 / MEAN * log(r) + arrival[i - 1]);
         burst[i] = 1+((double)rand()/RAND_MAX)*19.0;

@@ -16,7 +16,7 @@ using namespace std;
 queue<int> buffer;
 vector<int> status(100,0);
 pthread_t workers[MAX_THREAD],scheduler,reporter;
-pthread_mutex_t lock;
+pthread_mutex_t mute, st_lock;
 
 void suspend(int id)
 {
@@ -33,9 +33,9 @@ void producer(){
         {
             // printf("buffer size %d\n",buffer.size());
             while(buffer.size()>=MAX_QUEUE_SIZE);
-            pthread_mutex_lock(&lock);
+            pthread_mutex_lock(&mute);
             buffer.push(rand()%100);
-            pthread_mutex_unlock(&lock);
+            pthread_mutex_unlock(&mute);
         }
 }
 
@@ -43,15 +43,17 @@ void consumer(){
     while(1)
         {
             while(buffer.size()<=0);
-            pthread_mutex_lock(&lock);
+            pthread_mutex_lock(&mute);
             buffer.pop();
-            pthread_mutex_unlock(&lock);
+            pthread_mutex_unlock(&mute);
         }
 }
 
 void * work(void* args)
 {
+
     int id = *(int*)args;
+    
     int x = (rand()%2);
     // printf("x = %d\n",x);
     if(x==0)
@@ -69,7 +71,7 @@ void * work(void* args)
 
 void * schedule(void* args)
 {
-    sleep(0.1);
+    sleep(0.5);
     queue<int> ready;
     int n = *(int *)args,i;
     for(i=0;i<n;i++)
@@ -83,23 +85,38 @@ void * schedule(void* args)
             int current = ready.front();
             // printf("%d\n", current);
             ready.pop();
+            // printf("scheduler waiting for st_lock\n");
+            pthread_mutex_lock(&st_lock);
             status[current] = RUNNING;
             pthread_kill(workers[current], SIGUSR2);
+            pthread_mutex_unlock(&st_lock);
+            // printf("scheduler released for st_lock\n");
+            // printf("-------------waking up : %d\n", current);
             sleep(DELTA);
+            pthread_mutex_lock(&st_lock);
             if(status[current]!=TERMINATED)
             {
-                pthread_kill(workers[current],SIGUSR1);
+                // printf("scheduler waiting for st_lock\n");
                 status[current] = SUSPENDED;
+                pthread_kill(workers[current],SIGUSR1);
+                // printf("------------suspending down : %d\n", current);
+                // printf("scheduler released for st_lock\n");
                 ready.push(current);
             }
+            pthread_mutex_unlock(&st_lock);
+            sleep(0.01);
 
         }
         else
         {
             int current = ready.front();
+            // printf("%d\n", current);
             ready.pop();
+            pthread_mutex_lock(&st_lock);
             status[current] = RUNNING;
+            // printf("------------waking up : %d\n", current);
             pthread_kill(workers[current], SIGUSR2);
+            pthread_mutex_unlock(&st_lock);
             while(status[current]!=TERMINATED);
             break;
         }
@@ -110,15 +127,18 @@ void * schedule(void* args)
 
 void *report(void * args)
 {
+    sleep(0.1);
     string name[3]={"RUNNING","SUSPENDED","TERMINATED"};
     int n = *(int*)args;
     int previous_status[n];
     for(int i=0;i<n;i++)
-        previous_status[i] = status[i];
+        previous_status[i] = SUSPENDED;
     while(1)
     {
+        pthread_mutex_lock(&st_lock);
         for(int i=0;i<n;i++)
         {
+            // printf("reporter waiting for st_lock\n");
             if(previous_status[i] != status[i])
             {
                 if(previous_status[i]==SUSPENDED&&status[i]==TERMINATED)
@@ -130,10 +150,11 @@ void *report(void * args)
                 {
                     printf("%d: %s -> %s\n", i, name[previous_status[i]].c_str(), name[status[i]].c_str());
                 }
-                
             }
             previous_status[i] = status[i];
-        }   
+            // printf("reporter released for st_lock\n");
+        }      
+        pthread_mutex_unlock(&st_lock);
     }
     pthread_exit(0);
 }
@@ -149,7 +170,13 @@ int main()
         return 0;
     }
 
-    if (pthread_mutex_init(&lock, NULL) != 0) 
+    if (pthread_mutex_init(&mute, NULL) != 0) 
+    { 
+        printf("\n mutex init has failed\n"); 
+        return 1; 
+    } 
+
+    if (pthread_mutex_init(&st_lock, NULL) != 0) 
     { 
         printf("\n mutex init has failed\n"); 
         return 1; 
@@ -168,8 +195,12 @@ int main()
             printf("While creating thread %d, pthread_create returned error code %d\n", i, pstat);
             exit(1);
         }
-        pthread_kill(workers[i],SIGUSR1);
+        // printf("worker waiting for st_lock\n");
+        pthread_mutex_lock(&st_lock);
         status[i] = SUSPENDED;
+        pthread_kill(workers[i],SIGUSR1);
+        pthread_mutex_unlock(&st_lock);
+        // printf("worker released st_lock\n");
 
     }
     if ((pstat = pthread_create(&scheduler, NULL, schedule, (void*)&n))!=0)
