@@ -70,11 +70,14 @@ int create_myfs(int fs_size, int block_size) {
 	sb->no_files = 0;
 	sb->fd_count = 0;
 	cwd = -1;
+	block_1 * block1_ptr = (block_1 *)(myfs_mem+SUPER_BLOCK_MAX_SIZE);
+	for(int i=0;i<MAX_NO_BLOCKS;i++)
+		block1_ptr->FAT[i].next	 = -1;
 	return 1;
 }
 
 int my_open(string file_name){    // returns fd
-	cout<<"here file_name = "<<file_name<<endl;
+	cout<<"[MY_OPEN] file_name = "<<file_name<<endl;
 	super_block_st *sb = (super_block_st *)myfs_mem;
 
 	my_file *files;
@@ -91,7 +94,7 @@ int my_open(string file_name){    // returns fd
 		}
 	}
 
-	cout<<" in my_open, no_files = "<<*no_files<<endl;
+	cout<<"[MY_OPEN] no_files = "<<*no_files<<endl;
 	files[*no_files].name =file_name;
 	files[*no_files].file_size = 0;
 	files[*no_files].start_block = -1;
@@ -100,11 +103,11 @@ int my_open(string file_name){    // returns fd
 	(*no_files)++;
 
 	(sb->fd_count)++;
-	cout<<"after assigning file, fd_count = "<<sb->fd_count<<endl;
-	cout<<"files[*no_files-1].name = "<< files[*no_files-1].name<<endl;
+	// cout<<"[MY_OPEN] after assigning file, fd_count = "<<sb->fd_count<<endl;
+	// cout<<"[MY_OPEN] files[*no_files-1].name = "<< files[*no_files-1].name<<endl;
 	// (sb->fd_t)[sb->fd_count] = files[(*no_files)-1];
 	sb->fd_t[sb->fd_count] = &files[(*no_files)-1];
-	cout<<"returning value "<<endl;
+	// cout<<"[MY_OPEN] returning value "<<endl;
 	return sb->fd_count;
 }
 
@@ -131,10 +134,10 @@ int my_read(int fd, int nbytes, char *buf){
 	int curr_block = sb->fd_t[fd]->start_block;
 	int file_size = sb->fd_t[fd]->file_size;
 
-	cout<<"in my_read, fd = "<<fd<<", start_block = "<<curr_block<<endl;
+	cout<<"[MY_READ] fd = "<<fd<<", start_block = "<<curr_block<<endl;
 	char *temp;
 	int bytes_read = 0, to_be_read = min(file_size, nbytes);
-	cout<<" to_be_read = "<<to_be_read<<endl;
+	cout<<"[MY_READ] to_be_read = "<<to_be_read<<endl;
 
 	while(bytes_read<to_be_read) {
 		temp = (char *)(myfs_mem+SUPER_BLOCK_MAX_SIZE+sizeof(block_1)+(sb->block_size)*(curr_block-2));
@@ -172,8 +175,8 @@ int get_free_block(int curr_block){
 }
 
 int my_write(int fd, int nbytes, char *buf) {
-	cout<<"in my_write, fd = "<<fd<<" \n";
-	// cout<<"nbytes = "<<nbytes<<", buf = "<<buf<<endl;
+	cout<<"[MY_WRITE] fd = "<<fd<<" \n";
+	cout<<"[MY_WRITE] nbytes = "<<nbytes<<endl;
 	super_block_st *sb = (super_block_st *)myfs_mem;
 	block_1 * block1_ptr = (block_1 *)(myfs_mem+SUPER_BLOCK_MAX_SIZE);
 
@@ -186,7 +189,7 @@ int my_write(int fd, int nbytes, char *buf) {
 	int file_size = sb->fd_t[fd]->file_size;
 	int rem_bytes_to_fill = 0;
 
-	cout<<"got start_block = "<<curr_block<<endl;
+	cout<<"[MY_WRITE] got start_block = "<<curr_block<<" file_size = "<<file_size<<endl;
 
 	if(curr_block == -1) {
 		curr_block = get_free_block(-1);
@@ -195,15 +198,15 @@ int my_write(int fd, int nbytes, char *buf) {
 		sb->fd_t[fd]->start_block = curr_block;
 	}
 	else {
-		while(file_size>sb->block_size) {
+		while(block1_ptr->FAT[curr_block].next!=-1) {
 			curr_block = block1_ptr->FAT[curr_block].next;
 			file_size -= sb->block_size;
 		}
 		rem_bytes_to_fill = sb->block_size - file_size;
 	}
 
-	cout<<"after check, start_block = "<<sb->fd_t[fd]->start_block<<", curr_block = "<<curr_block<<endl;
-
+	cout<<"[MY_WRITE] after check, start_block = "<<sb->fd_t[fd]->start_block<<", curr_block = "<<curr_block<<endl;
+	cout<<"[MY_WRITE] rem_bytes_to_fill = "<<rem_bytes_to_fill<<endl;
 	int bytes_written = 0;
 	char *temp;
 	while(nbytes>0) {
@@ -216,6 +219,8 @@ int my_write(int fd, int nbytes, char *buf) {
 			nbytes--;
 			bytes_written++;
 		}
+		if(rem_bytes_to_fill>0)
+			break;
 		curr_block = get_free_block(curr_block);
 		if(curr_block==-1) {
 			cout<<"MEMORY FULL! \n";
@@ -226,6 +231,7 @@ int my_write(int fd, int nbytes, char *buf) {
 	}
 
 	sb->fd_t[fd]->file_size += bytes_written;
+	cout<<"curr_block = "<<curr_block<<", rem_bytes_to_fill = "<<rem_bytes_to_fill<<endl;
 	// cout<<"written data, temp = "<<temp<<endl;
 	return bytes_written;
 }
@@ -245,13 +251,22 @@ int my_copy(string file_name) {
 	while(!feof(fp))
 	{
 		bzero(buf,sizeof(buf));
-		int nbytes = fread(buf,1,sb->block_size,fp);
+		int nbytes = fread(buf,1,80,fp);
+		buf[nbytes] = '\0';
+		cout<<"[MY_COPY] going to write "<<nbytes<<" bytes"<<endl;;
 		int x = my_write(fd, nbytes, buf);
 		if(x==-1)
 			return -1;
 	}
 	fclose(fp);
 	return 1;
+}
+
+int my_cat(string file_name) {
+	char buff[100];
+	bzero(buff, sizeof(buff));
+
+	int fd = my_open(file_name);
 }
 
 #endif

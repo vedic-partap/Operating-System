@@ -1,7 +1,7 @@
 #include "myfs.h"
 
 int main(){
-	int fs_size = 10000, block_size = 1000;
+	int fs_size = 10000, block_size = 100;
 
 	cout<<"creating myfs \n";
 	int x = create_myfs(fs_size, block_size);
@@ -18,6 +18,7 @@ int main(){
 
 	char buff1[605];
 	x = my_read(fd, 605, buff1);
+	cout<<"x = "<<x<<endl;
 	buff1[x] = '\0';
 	cout<<"Read: "<<buff1<<endl;
 	return 0;
