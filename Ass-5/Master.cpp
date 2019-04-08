@@ -36,8 +36,8 @@ string get_prs(int l, int m){
 	string ans = "";
 	for(int i=0;i<l;i++){
 		string curr_v = to_string(rand()%m);
-		strcat(ans, curr_v);
-		strcat(ans, ",");
+		strcat(ans.c_str(), curr_v.c_str());
+		strcat(ans.c_str(), ",");
 	}
 	return ans;
 }
@@ -81,9 +81,10 @@ int main(){
 	key_t MQ3_key = ftok("progfile2", 65);
 	int MQ3 = msgget(MQ3_key, 0666|IPC_CREAT);
 
+	int master_pid = get_pid();
 	int f_scheduler = fork();
 	if(f_scheduler==0){
-		execlp("./scheduler", "./scheduler", to_string(MQ1), to_string(MQ2), (char*)NULL);
+		execlp("./scheduler", "./scheduler", to_string(MQ1), to_string(MQ2), to_string(k), to_string(master_pid), (char*)NULL);
 	}
 	scheduler_pid = f_scheduler;
 
