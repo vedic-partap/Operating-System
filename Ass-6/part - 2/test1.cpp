@@ -14,7 +14,7 @@ int main(int argc, char const *argv[])
 	for(int i=0;i<8;i++){
 		char fname[7] = "rahul1";
 		fname[5] += i;
-		my_copy("abc.cpp", fname);
+		my_copy("abc.txt", fname);
 	}
 	my_ls();
 	cout << "Enter file name to delete: ";

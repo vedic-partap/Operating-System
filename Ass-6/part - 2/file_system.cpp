@@ -1,3 +1,475 @@
+// Part 1 --------------------------------------------------
+#ifndef _myfs
+#define _myfs
+
+#include <bits/stdc++.h>
+#include <iostream>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <bitset>
+#include <semaphore.h>
+using namespace std;
+
+const int MAX_NO_BLOCKS = 1024;
+const int MAX_DIRECTORY = 10;
+const int MAX_FILE = 20;
+const int SUPER_BLOCK_MAX_SIZE = 1000;
+
+int cwd;
+char *myfs_mem;
+
+struct my_file{
+	string name;
+	int file_size;
+	int mode;
+	int start_block;
+	int seek;
+};
+
+struct super_block_st{
+	int block_size;
+	int fs_size;
+	int no_blocks;
+	bitset <MAX_NO_BLOCKS> bit_vector;
+	int no_files;
+	my_file files[MAX_FILE];
+	my_file *fd_t[MAX_FILE];
+	int fd_count;
+};
+
+struct fat_entry{
+	int is_free;
+	int next;
+};
+
+struct block_1{
+	fat_entry FAT[MAX_NO_BLOCKS];
+};
+
+int create_myfs(int fs_size, int block_size) {
+
+	if(fs_size<SUPER_BLOCK_MAX_SIZE+sizeof(block_1)) {
+		cout<<"INPUT SIZE TOO SMALL! \n";
+		return -1;
+	}
+
+	myfs_mem = (char *)malloc(fs_size);
+	if(myfs_mem==NULL) {
+		cout<<"COULDN'T ALLOCATE MEMORY \n";
+		return -1;
+	}
+
+	super_block_st *sb = (super_block_st *)myfs_mem;
+
+	sb->fs_size = fs_size;
+	sb->block_size = block_size;
+	sb->no_blocks = (fs_size- SUPER_BLOCK_MAX_SIZE + sizeof(block_1))/block_size+2;
+
+	for(int i=0;i<MAX_NO_BLOCKS;i++)
+		sb->bit_vector[i] = 0;
+
+	for(int i=0;i<MAX_FILE;i++) {
+		sb->files[i].mode = 'n';
+		sb->files[i].seek = 0;
+		sb->files[i].file_size = 0;
+	}
+
+	sb->no_files = 0;
+	sb->fd_count = 0;
+	cwd = -1;
+	block_1 * block1_ptr = (block_1 *)(myfs_mem+SUPER_BLOCK_MAX_SIZE);
+	for(int i=0;i<MAX_NO_BLOCKS;i++)
+		block1_ptr->FAT[i].next	 = -1;
+	return 1;
+}
+
+int my_open(string file_name){    // returns fd
+	// cout<<"[MY_OPEN] file_name = "<<file_name<<endl;
+	super_block_st *sb = (super_block_st *)myfs_mem;
+
+	my_file *files;
+	int *no_files;
+
+	files = (sb->files);
+	no_files = &(sb->no_files);
+
+	for(int i=0;i<*no_files;i++) {
+		if(strcmp(file_name.c_str(), (files[i].name).c_str())==0) { //there exists a file
+			sb->fd_count++;
+			sb->fd_t[sb->fd_count] = &files[i];
+			return sb->fd_count;
+		}
+	}
+
+	// cout<<"[MY_OPEN] no_files = "<<*no_files<<endl;
+	files[*no_files].name =file_name;
+	files[*no_files].file_size = 0;
+	files[*no_files].start_block = -1;
+	files[*no_files].mode = 'o';
+
+	(*no_files)++;
+
+	(sb->fd_count)++;
+	// cout<<"[MY_OPEN] after assigning file, fd_count = "<<sb->fd_count<<endl;
+	// cout<<"[MY_OPEN] files[*no_files-1].name = "<< files[*no_files-1].name<<endl;
+	// (sb->fd_t)[sb->fd_count] = files[(*no_files)-1];
+	sb->fd_t[sb->fd_count] = &files[(*no_files)-1];
+	// cout<<"[MY_OPEN] returning value "<<endl;
+	return sb->fd_count;
+}
+
+int my_close(int fd) {
+	super_block_st *sb = (super_block_st *)myfs_mem;
+	
+	if(sb->fd_t[fd]->mode=='n'){
+		cout<<"INVALID FILE DESCRIPTOR! \n";
+		return -1;
+	}
+	sb->fd_t[fd]->mode = 'n';
+	return 1;
+}
+
+int my_read(int fd, int nbytes, char *buf){
+	super_block_st *sb = (super_block_st *)myfs_mem;
+	block_1 * block1_ptr = (block_1 *)(myfs_mem+SUPER_BLOCK_MAX_SIZE);
+
+	if(sb->fd_t[fd]->mode=='n'){
+		cout<<"INVALID FILE DESCRIPTOR! \n";
+		return -1;
+	}
+
+	int curr_block = sb->fd_t[fd]->start_block;
+	int file_size = sb->fd_t[fd]->file_size;
+
+	int seek = sb->fd_t[fd]->seek;
+	while(seek>=sb->block_size) {
+		seek -= sb->block_size;
+		curr_block = block1_ptr->FAT[curr_block].next;
+	}
+	if(curr_block==-1) {
+		sb->fd_t[fd]->seek = -1;
+		return 0;
+	}
+
+	// cout<<"[MY_READ] fd = "<<fd<<", curr_block = "<<curr_block<<endl;
+	char *temp;
+	int bytes_read = 0, to_be_read = min(file_size - sb->fd_t[fd]->seek, nbytes);
+	// cout<<"[MY_READ] to_be_read = "<<to_be_read<<endl;
+
+	while(bytes_read<to_be_read) {
+		temp = (char *)(myfs_mem+SUPER_BLOCK_MAX_SIZE+sizeof(block_1)+(sb->block_size)*(curr_block-2));
+		int bytes_here = seek;
+		while(bytes_read<to_be_read) {
+			if(bytes_here>=sb->block_size) {
+				curr_block = block1_ptr->FAT[curr_block].next;
+			}
+
+			buf[bytes_read] = temp[bytes_here];
+			bytes_read++;
+			bytes_here++;
+		}
+	}
+
+	sb->fd_t[fd]->seek += bytes_read;
+	// cout<<"seek = "<<sb->fd_t[fd]->seek<<endl;
+	if(file_size == sb->fd_t[fd]->seek) {
+		sb->fd_t[fd]->seek = -1;
+	}
+	// cout<<"in my_read, buf = "<<buf<<", temp = "<<temp<<"bytes_read = "<<bytes_read<<endl;
+	return bytes_read;
+}
+
+int get_free_block(int curr_block){
+	super_block_st *sb = (super_block_st *)myfs_mem;
+	block_1 * block1_ptr = (block_1 *)(myfs_mem+SUPER_BLOCK_MAX_SIZE);
+
+	int alloted_block = -1;
+	for(int i=2;i<sb->no_blocks;i++)
+		if(sb->bit_vector[i]==0) {
+			alloted_block = i;
+			sb->bit_vector[i] = 1;
+			break;
+		}
+
+	if(curr_block!=-1)
+		block1_ptr->FAT[curr_block].next = alloted_block;
+
+	return alloted_block;
+}
+
+int my_write(int fd, int nbytes, char *buf) {
+	// cout<<"[MY_WRITE] fd = "<<fd<<" \n";
+	// cout<<"[MY_WRITE] nbytes = "<<nbytes<<endl;
+	super_block_st *sb = (super_block_st *)myfs_mem;
+	block_1 * block1_ptr = (block_1 *)(myfs_mem+SUPER_BLOCK_MAX_SIZE);
+
+	if(sb->fd_t[fd]->mode=='n'){
+		cout<<"INVALID FILE DESCRIPTOR! \n";
+		return -1;
+	}
+
+	int curr_block = sb->fd_t[fd]->start_block;
+	int file_size = sb->fd_t[fd]->file_size;
+	int rem_bytes_to_fill = 0;
+
+	// cout<<"[MY_WRITE] got start_block = "<<curr_block<<" file_size = "<<file_size<<endl;
+
+	if(curr_block == -1) {
+		curr_block = get_free_block(-1);
+		file_size = 0;
+		rem_bytes_to_fill = sb->block_size;
+		sb->fd_t[fd]->start_block = curr_block;
+	}
+	else {
+		while(block1_ptr->FAT[curr_block].next!=-1) {
+			curr_block = block1_ptr->FAT[curr_block].next;
+			file_size -= sb->block_size;
+		}
+		rem_bytes_to_fill = sb->block_size - file_size;
+	}
+
+	// cout<<"[MY_WRITE] after check, start_block = "<<sb->fd_t[fd]->start_block<<", curr_block = "<<curr_block<<endl;
+	// cout<<"[MY_WRITE] rem_bytes_to_fill = "<<rem_bytes_to_fill<<endl;
+	int bytes_written = 0;
+	char *temp;
+	while(nbytes>0) {
+		int already_filled = sb->block_size - rem_bytes_to_fill;
+		temp = (char *)(myfs_mem+SUPER_BLOCK_MAX_SIZE+sizeof(block_1)+(sb->block_size)*(curr_block-2));
+		while(rem_bytes_to_fill>0 && nbytes>0) {
+			temp[already_filled] = buf[bytes_written];
+			already_filled++;
+			rem_bytes_to_fill--;
+			nbytes--;
+			bytes_written++;
+		}
+		if(rem_bytes_to_fill>0)
+			break;
+		curr_block = get_free_block(curr_block);
+		if(curr_block==-1) {
+			cout<<"MEMORY FULL! \n";
+			return -1;
+		}
+		rem_bytes_to_fill = sb->block_size;
+		already_filled = 0;
+	}
+
+	sb->fd_t[fd]->file_size += bytes_written;
+	// cout<<"curr_block = "<<curr_block<<", rem_bytes_to_fill = "<<rem_bytes_to_fill<<endl;
+	// cout<<"written data, temp = "<<temp<<endl;
+	return bytes_written;
+}
+
+int my_copy(string file_name) {
+	FILE *fp = fopen(file_name.c_str(), "r");
+	if(fp==NULL) {
+		cout<<"NO SUCH FILE IN DISK (PC)! \n";
+		return -1;
+	}
+	super_block_st *sb = (super_block_st *)myfs_mem;
+	int fd = my_open(file_name);
+	if(fd==-1)
+		return -1;
+	char buf[sb->block_size];
+
+	while(!feof(fp))
+	{
+		bzero(buf,sizeof(buf));
+		int nbytes = fread(buf,1,80,fp);
+		buf[nbytes] = '\0';
+		// cout<<"[MY_COPY] going to write "<<nbytes<<" bytes"<<endl;;
+		int x = my_write(fd, nbytes, buf);
+		if(x==-1)
+			return -1;
+	}
+	fclose(fp);
+	return 1;
+}
+
+int is_eof(int fd){
+	super_block_st *sb = (super_block_st *)myfs_mem;
+	if(sb->fd_t[fd]->seek==-1)
+		return 1;
+	return  0;
+}
+
+int my_cat(string file_name) {
+	char buff[100];
+
+	int fd = my_open(file_name);
+	if(fd==-1) {
+		return -1;
+	}
+
+	while(!is_eof(fd)) {
+		bzero(buff, sizeof(buff));
+		int nbytes = my_read(fd, sizeof(buff), buff);
+		cout<<buff;
+	}
+	return 1;
+}
+
+#endif
+
+
+
+
+
+
+
+
+
+// Part 2 ------------------------------------------
+
+#ifndef MRFS_H
+#define MRFS_H
+
+#include <time.h>
+#include <iostream>
+
+int get_db_size() {
+	int x;
+	std::cout<<"Enter block size : ";
+	std::cin>>x;
+	return x;
+}
+
+const int DB_SZ = get_db_size(); // diskblock size in bytes
+#define INODE_MAX (1<<8) // max number of inodes
+/*
+Assuming maximum memory allocation of 256MB
+max no of diskblocks = 2^8 * 2^20 / DB_SZ = 2^20
+*/
+#define DB_MAX (1<<20)
+/*
+size of inode bitmap in bytes = INODE_MAX / 2^3 = 2^5
+*/
+#define INODE_BM_SZ (1<<5)
+/*
+size of diskblock bitmap in bytes = DB_MAX / 2^3 = 2^17
+*/
+#define DB_BM_SZ (1<<17)
+
+struct SuperBlock_t{
+	int total_sz;
+	int max_inodes;
+	int cur_inodes;
+	int max_db;
+	int cur_db;
+	unsigned char inode_bm[INODE_BM_SZ];
+	unsigned char db_bm[DB_BM_SZ];
+};
+
+// size of superblock
+const int SB_SZ = sizeof(SuperBlock_t);
+// number of diskblocks for superblock
+const int SB_DB = SB_SZ / DB_SZ + 1;
+// size of superblock block
+const int SB_SZ_B = SB_DB * DB_SZ;
+
+/*
+i => Individual
+g => group
+o => others
+value: 00000rwx;
+*/
+struct AccPer_t{
+	unsigned char i;
+	unsigned char g;
+	unsigned char o;
+};
+
+const int PTR_COUNT = 10;
+const int FILENAME_MAX1 = 30;
+
+const int PTR_MAX = (1<<3);
+const int IPTR_MAX = (1<<6);
+const int DIPTR_MAX = (1<<12);
+
+struct INode_t{
+	bool ftype;
+	int sz;
+	time_t last_modified;
+	time_t last_read;
+	AccPer_t permissions;
+	int ptr[PTR_COUNT];
+};
+
+struct INodeList_t{
+	INode_t node[INODE_MAX];
+};
+
+struct Block_t{
+	unsigned char * val = new unsigned char[DB_SZ];
+};
+
+struct DirectoryEntry_t{
+	char filename[FILENAME_MAX1];
+	short int ptr;
+};
+
+#define FILES_PER_DIR 8
+
+struct Directory_t{
+	DirectoryEntry_t entry[FILES_PER_DIR];
+};
+
+#define MAX_FD_SZ 32
+
+struct FDEntry_t{
+	int loc;
+	INode_t* node;
+	char mode;
+};
+
+struct FDTable_t{
+	FDEntry_t entry[MAX_FD_SZ];
+};
+
+// size of InodeList
+const int INODEL_SZ = sizeof(INodeList_t);
+// number of diskblocks for INodeList
+const int INODEL_DB = INODEL_SZ / DB_SZ + 1;
+// size of InodeList block
+const int INODEL_SZ_B = INODEL_DB * DB_SZ;
+
+// maximum number of diskblocks for data
+const int MAX_DATA_DB = DB_MAX - SB_DB - INODEL_DB;
+
+// memory file system pointer
+extern char* mrfs_mem;
+extern int cur_dir;
+extern FDTable_t fd_table;
+/*
+size denotes the total size of the file system in Mbytes.
+Returns -1 on error
+*/
+int my_create(int size);
+
+int my_copy(char *source, char* dest);
+
+int my_rm(char *filename);
+
+int my_ls();
+
+int my_mkdir(char *dirname);
+
+int my_chdir(char* dirname);
+
+int my_rmdir(char *dirname);
+
+int my_open(char *filename, char mode);
+
+int my_close(int fd);
+
+int my_read(int fd, int nbytes, char *buff);
+
+int my_write(int fd, int nbytes, char *buff);
+
+int eof_myfs(int fd);
+
+#endif
+
 #include "mrfs.h"
 
 #include <stdlib.h>
@@ -70,7 +542,7 @@ int my_create(int size){
 	inl->node[0].sz = 0;
 	inl->node[0].last_modified = time(NULL);
 	inl->node[0].last_read = time(NULL);
-	// inl->node[0].permissions = {6, 6, 6};
+	inl->node[0].permissions = {6, 6, 6};
 	inl->node[0].ptr[0] = sb->cur_db - 1;
 	for(i=1;i<10;i++)
 		inl->node[0].ptr[i] = -1;
@@ -357,7 +829,7 @@ int my_mkdir(char *dirname){
 	inode->sz = 0;
 	inode->last_modified = time(NULL);
 	inode->last_read = time(NULL);
-	// inode->permissions = {6,6,6};
+	inode->permissions = {6,6,6};
 	for(int i=0;i<10;i++)
 		inode->ptr[i] = -1;
 	create_dir_entry(dir, dirname, node_idx);
@@ -414,7 +886,7 @@ INode_t* create_empty_file(char *filename){
 	fnode->sz = 0;
 	fnode->last_modified = time(NULL);
 	fnode->last_read = time(NULL);
-	// fnode->permissions = {6,6,6};
+	fnode->permissions = {6,6,6};
 	// update current directory
 	INode_t* cur_inode = &((INodeList_t*)(mrfs_mem + SB_SZ_B))->node[cur_dir];
 	create_dir_entry(cur_inode, filename, idx);
@@ -563,3 +1035,5 @@ int my_cat(char file_name[]) {
 	}
 	return 1;
 }
+
+

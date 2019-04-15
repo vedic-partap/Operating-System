@@ -1,0 +1,192 @@
+## Implementation of Memory Resident File System - Part 1 (FAT) ##
+
+
+Group 3:
+	Rahul Kumar, 16CS10042
+	Vedic Partap, 16CS10053
+
+Linked List Implementation using FAT
+
+Data Structures:
+
+		struct my_file{
+		string name;
+		int file_size;
+		int mode;
+		int start_block;
+		int seek;
+	};
+
+	struct super_block_st{
+		int block_size;
+		int fs_size;
+		int no_blocks;
+		bitset <MAX_NO_BLOCKS> bit_vector;
+		int no_files;
+		my_file files[MAX_FILE];
+		my_file *fd_t[MAX_FILE];
+		int fd_count;
+	};
+
+	struct fat_entry{
+		int is_free;
+		int next;
+	};
+
+	struct block_1{
+		fat_entry FAT[MAX_NO_BLOCKS];
+	};
+
+API Functions:
+	int create_myfs(int fs_size, int block_size);
+		-> Allocate Memory, Set Disk and Block Size.
+		-> Initialization Steps
+
+	int my_open(string file_name);
+		-> Create file object
+		-> Return file descriptor
+
+	int my_close(int fd);
+		-> Change Mode
+		-> Disable file descriptor
+
+	int my_read(int fd, int nbytes, char *buf);
+		-> Read chunk of nbytes from referenced file to buf
+		-> Maintain seek parameter to check for the current reading location
+
+	int get_free_block(int curr_block);
+		-> Search for a free block and return its index
+
+	int my_write(int fd, int nbytes, char *buf);
+		-> Write a chunk of nbytes to file referenced by fd
+		-> Allocate blocks if needed
+
+	int my_copy(string file_name);
+		-> Transfer File from OS file System to My file system
+		-> Use my_open and my_write functions
+
+	int is_eof(int fd);
+		-> Check for end of file in My file system
+		-> verify seek parameter
+
+	int my_cat(string file_name);
+		-> Read and print the entire file to the screen
+		-> Use my_open and my_read functions
+
+
+Contributions:
+	Rahul :
+		Data Structures
+		my_open
+		my_close
+		my_read
+		my_write
+
+	Vedic :
+		create_myfs
+		my_copy
+		my_cat
+		is_eof
+		report
+
+
+
+
+
+
+
+
+
+
+
+## Implementation of Memory Resident File System - Part 2 ##
+
+
+Group 3:
+	Rahul Kumar, 16CS10042
+	Vedic Partap, 16CS10053
+
+Data Structures:
+
+struct SuperBlock_t{
+	int total_sz;
+	int max_inodes;
+	int cur_inodes;
+	int max_db;
+	int cur_db;
+	unsigned char inode_bm[INODE_BM_SZ];
+	unsigned char db_bm[DB_BM_SZ];
+};
+
+struct INode_t{
+	bool ftype;
+	int sz;
+	time_t last_modified;
+	time_t last_read;
+	AccPer_t permissions;
+	int ptr[PTR_COUNT];
+};
+
+struct INodeList_t{
+	INode_t node[INODE_MAX];
+};
+
+struct Block_t{
+	unsigned char * val = new unsigned char[DB_SZ];
+};
+
+struct DirectoryEntry_t{
+	char filename[FILENAME_MAX1];
+	short int ptr;
+};
+
+struct FDEntry_t{
+	int loc;
+	INode_t* node;
+	char mode;
+};
+
+struct FDTable_t{
+	FDEntry_t entry[MAX_FD_SZ];
+};
+
+API Functions:
+int my_create(int size);
+
+int my_copy(char *source, char* dest);
+
+int my_rm(char *filename);
+
+int my_ls();
+
+int my_mkdir(char *dirname);
+
+int my_chdir(char* dirname);
+
+int my_rmdir(char *dirname);
+
+int my_open(char *filename, char mode);
+
+int my_close(int fd);
+
+int my_read(int fd, int nbytes, char *buff);
+
+int my_write(int fd, int nbytes, char *buff);
+
+int eof_myfs(int fd);
+
+Contribution:
+
+Rahul:
+my_open
+my_read
+my_write
+my_copy
+my_cat
+
+Vedic:
+my_create
+my_mkdir
+my_rmdir
+my_chdir
+eof_myfs

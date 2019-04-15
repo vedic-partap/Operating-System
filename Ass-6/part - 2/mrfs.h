@@ -125,11 +125,7 @@ int my_create(int size);
 
 int my_copy(char *source, char* dest);
 
-int copy_myfs2pc(char *source, char *dest);
-
 int my_rm(char *filename);
-
-int showfile_myfs(char *filename);
 
 int my_ls();
 
@@ -148,13 +144,5 @@ int my_read(int fd, int nbytes, char *buff);
 int my_write(int fd, int nbytes, char *buff);
 
 int eof_myfs(int fd);
-
-int dump_myfs(char *dumpfile);
-
-int restore_myfs(char *dumpfile);
-
-int status_myfs();
-
-int chmod_myfs(char *name, int mode);
 
 #endif
