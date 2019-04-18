@@ -1,122 +1,234 @@
-#include <bits/stdc++.h>
-#include <pthread.h>
-#include <signal.h>
-#include <sys/shm.h>
-#include <ctime>
-#include <unistd.h> 
-
+#include "Library.h"
 using namespace std;
 
-struct pt_entry{
-	int f_no;
-	int status;
-};
+char *str[MAX],command[MAX];
+int k,m,f,s;
+PAGE_TABLE *page_table;
+FREE_FRAME *free_frame_list;
 
-void initialize_pt(struct pt_entry *pt, int len){
-	for(int i=0;i<len;i++)
-		pt[i].f_no = -1;
+MESSAGE_BUFFER MQ;
+
+void init_str(){
+    for(int i=0;i<6;i++)
+        str[i]=new char[1000];
 }
 
-struct msg_buff{
-	long mtype;
-	pid_t mpid;
-};
-
-struct process_p{
-	pid_t pid;
-	int index;
-	int npr;
-};
-
-int rand_bet(int a, int b){
-	return rand()%(b-a+1)+a;
+string Generate_Page_Ref_String(int no_of_pages,int page_ref_str_len){
+    string ans="";
+    default_random_engine  generator;
+    double mu_page_ref=no_of_pages/2.0,sigma_page_ref=1.0;
+    for(int i=0;i<page_ref_str_len;i++){
+        normal_distribution<double> distribution(mu_page_ref,sigma_page_ref);
+        double val=distribution(generator);
+        if(int(val)>=no_of_pages){
+            val = (int)no_of_pages-1;
+        }
+        if(int(val)<0){
+            val = 0;
+        }
+        ans.append(to_string((int)val)+((i==page_ref_str_len-1)?"":","));
+        mu_page_ref=val;
+    }
+    return ans;
 }
 
-string get_prs(int l, int m){
-	string ans = "";
-	for(int i=0;i<l;i++){
-		string curr_v = to_string(rand()%m);
-		strcat(ans.c_str(), curr_v.c_str());
-		strcat(ans.c_str(), ",");
-	}
-	return ans;
+int create_shared_page_table(){
+    key_t  key=ftok("SM1",65); 
+    int shmid=shmget(key,sizeof(PAGE_TABLE[MAX]),0666|IPC_CREAT);
+    
+    if(shmid<0){
+        printf("Creation of shared page table file error!!\n");
+        return -1;
+    }
+    
+    page_table=(PAGE_TABLE*)shmat(shmid,NULL,0);
+    for(int i=0;i<k;i++){
+        page_table[i].valid=new int[m+1];
+        page_table[i].frame_no=new int[m+1];
+        page_table[i].timestamp=new int[m+1];
+        page_table[i].page_no=new int[m+1];
+    }
+    memset(page_table,-1,sizeof page_table);
+    return shmid; 
 }
-
-
-int scheduler_pid, mmu_pid;
-void terminate_all(){
-	kill(scheduler_pid, SIGINT);
-	kill(mmu_pid, SIGINT);
-	exit(0);
+int create_free_frame_list(){
+    key_t  key=ftok("SM2",65); 
+    int shmid=shmget(key,MAX*sizeof(FREE_FRAME),0666|IPC_CREAT);
+    if(shmid<0){
+        printf("Creation of shared free frame list file error!!\n");
+        return -1;
+    }
+    free_frame_list=(FREE_FRAME*)shmat(shmid,NULL,0);
+    for(int i=0;i<MAX;i++){
+        free_frame_list[i].isfree=0;
+    }
+    
+    return shmid; 
 }
+int create_ready_queue_MQ1(){
+    key_t key;int msgid; 
+    key = ftok("MQ1", 65); 
 
+    msgid = msgget(key, 0666 | IPC_CREAT); 
+    return msgid;
+    //printf("Write Data : "); 
+    //gets(message.mesg_text); 
+  
+    // msgsnd to send message 
+    //msgsnd(msgid, &message, sizeof(message), 0); 
+}
+int create_Scheduler_MMU_MQ2(){
+    key_t key;int msgid; 
+    key = ftok("MQ2", 65); 
+
+    msgid = msgget(key, 0666 | IPC_CREAT); 
+    return msgid;
+}
+int create_Process_MMU_MQ3(){
+    key_t key;int msgid; 
+    key = ftok("MQ3", 65); 
+    msgid = msgget(key, 0666 | IPC_CREAT); 
+    return msgid;
+}
+int create_notification_Scheduler_Master(){
+    key_t key;int msgid; 
+    key = ftok("notification_sched_master", 65); 
+    msgid = msgget(key, 0666 | IPC_CREAT); 
+    return msgid;
+}
 int main(){
-	int k, m, f, s;
-	cout<<"Total no of processes: ";
-	cin>>k;
-	cout<<"\nVirtual address space: ";
-	cin>>m;
-	cout<<"\nPhysical address space: ";
-	cin>>f;
-	cout<<"\nSize of the TLB: ";
-	cin>>s;
+    // Taking inputs to the program
+    cout<<"Enter the value of k:\n";
+    cin>>k;
+    cout<<"Enter the value of m:\n";
+    cin>>m;
+    cout<<"Enter the value of f:\n";
+    cin>>f;
 
-	key_t SM1_key = ftok("shmfile1",65); 
-	int SM1 = shmget(SM1_key, k*m*sizeof(pt_entry), 0666|IPC_CREAT);
-	struct pt_entry *pt = (struct pt_entry*)shmat(SM1, (void *)0, 0);
-	initialize_pt(pt, k*m);
+    /* Data Structures Initialization */
+    // Creation of message queues
+    int ID_MQ1=create_ready_queue_MQ1(),ID_MQ2=create_Scheduler_MMU_MQ2(),ID_MQ3=create_Process_MMU_MQ3();
+    // Creaton of shared memories
+    int ID_SM1=create_shared_page_table(),ID_SM2=create_free_frame_list();
+    int ID_notif=create_notification_Scheduler_Master();
+    cout<<"Data Structures Initialized\n";
+    cout<<"(Master) ID_SM1: "<<ID_SM1<<" ID_SM2: "<<ID_SM2<<" ID_MQ1: "<<ID_MQ1<<" ID_MQ2: "<<ID_MQ2<<" ID_MQ3: "<<ID_MQ3<<endl;
+    int pid_MMU;
+    // cout<<"(Master) Testing: "<<to_string(ID_MQ2)<<" in int "<<atoi(to_string(ID_MQ2).c_str())<<endl;
+    // Run the MMU process
+    if(fork()==0){    
+        init_str();
+        strcpy(str[0],"g++");
+        strcpy(str[1],"--std=c++14");
+        strcpy(str[2],"-oMMU");
+        strcpy(str[3],"MMU.cpp");
+        str[4]=NULL;  
+        strcpy(command,"g++");
+        execvp(command,str);
+        cout<<"Excevp failed to compile MMU!!\n";
+        exit(0);
+    }
+    else{
+        wait(NULL);
+        if((pid_MMU=fork())==0){
+            init_str();
+            strcpy(command,"./MMU");
+            strcpy(str[0],to_string(ID_MQ1).c_str());
+            strcpy(str[1],to_string(ID_MQ3).c_str());
+            strcpy(str[2],to_string(ID_SM1).c_str());
+            strcpy(str[3],to_string(ID_SM2).c_str());
+            str[4]=NULL;
+            execvp(command,str);
+            cout<<"Excevp failed to execute MMU!!\n";
+            exit(0);
+        }
 
-	key_t SM2_key = ftok("shmfile2", 65);
-	int SM2 = shmget(SM2_key, s*sizeof(int), 0666|IPC_CREAT);
-	int *ffl = (int*)shmat(SM2, (void*)0, 0);
-	for(int i=0;i<s;i++)
-		ffl[i] = 1;
+    }
+    cout<<"MMU running\n";
+    // cout<<"(Master) $$$$$$$$$$ ID_MQ1: "<<ID_MQ1<<","<<ID_MQ3<<endl;
 
-	key_t MQ1_key = ftok("progfile", 65);
-	int MQ1 = msgget(MQ1_key, 0666|IPC_CREAT);
+    // Create k Processes 
+    for(int i=0;i<k;i++){
+         int pid_child,pc;
+        if((pc=fork())==0){  
+            init_str();  
+            strcpy(str[0],"g++");
+            strcpy(str[1],"--std=c++14");
+            strcpy(str[2],("-oProcess"+to_string(i)).c_str());
+            strcpy(str[3],"Process.cpp");
+            str[4]=NULL;  
+            strcpy(command,"g++");
+            execvp(command,str);
+            cout<<"Excevp failed to compile Process:"<<i<<"\n";
+            exit(0);
+        }
+        // Waiting for compilation to get over
+        int status=0;
+        waitpid(pc,&status,0);
+        sleep(1);
+        if((pid_child=fork())==0){
+            init_str();
+            int mm=rand()%m+1,pp=rand()%(8*m)+2*m;
+            strcpy(command,("./Process"+to_string(i)).c_str());
+            // Instead of i, sending the pid_child is a good idea
+            strcpy(str[0],to_string(i).c_str());
+            strcpy(str[1],to_string(ID_MQ1).c_str());
+            strcpy(str[2],to_string(ID_MQ3).c_str());
+            // cout<<"(Master) ########## "<<ID_MQ1<<","<<ID_MQ3<<endl;
+            strcpy(str[3],Generate_Page_Ref_String(mm,pp).c_str());
+            // cout<<"(Master) *********** "<<str[0]<<","<<str[1]<<","<<str[2]<<","<<str[3]<<endl;
+            str[4]=NULL;
+            execvp(command,str);
+            printf("Error is %s\n",strerror(errno));
+            cout<<"Excevp failed to run Process:"<<i<<"\n";
+            exit(0);
+        }
+       // sleep(0.1);
+        // Putting the process to sleep as soon as it is put into ready queue
+        // so that for scheduler to schedule it, it can wake it up again
+        //kill(pid_child,SIGUSR1);
 
-	key_t MQ2_key = ftok("progfile1", 65);
-	int MQ2 = msgget(MQ2_key, 0666|IPC_CREAT);
 
-	key_t MQ3_key = ftok("progfile2", 65);
-	int MQ3 = msgget(MQ3_key, 0666|IPC_CREAT);
+        // Adding the process ID in the ready in FCFS fashion
+        //char process_id[MAX];
+        // Sleep for 0.25 then again continue to generate new processes
 
-	int master_pid = get_pid();
-	int f_scheduler = fork();
-	if(f_scheduler==0){
-		execlp("./scheduler", "./scheduler", to_string(MQ1), to_string(MQ2), to_string(k), to_string(master_pid), (char*)NULL);
-	}
-	scheduler_pid = f_scheduler;
+    }
+        // Run the Scheduler
+    int pid_scheduler;
+    if(fork()==0){    
+        init_str();
+        strcpy(str[0],"g++");
+        strcpy(str[1],"--std=c++14");
+        strcpy(str[2],"-oscheduler");
+        strcpy(str[3],"Scheduler.cpp");
+        str[4]=NULL;  
+        strcpy(command,"g++");
+        execvp(command,str);
+        cout<<"Excevp failed to compile Scheduler!!\n";
+        exit(0);
+    }
+    else{
+        wait(NULL);
+        if((pid_scheduler=fork())==0){
+            init_str();
+            strcpy(command,"./scheduler");
+            strcpy(str[0],to_string(ID_MQ1).c_str());
+            strcpy(str[1],to_string(ID_MQ2).c_str());
+            str[2]=NULL;
+            execvp(command,str);
+            cout<<"Excevp failed to execute Scheduler!!\n";
+            exit(0);
+        }
 
-	int f_mmu = fork();
-	if(f_mmu==0){
-		execlp("./mmu", "./mmu", to_string(MQ2), to_string(MQ3), to_string(SM1), to_string(SM2), (char*)NULL);
-	}
-	mmu_pid = f_mmu;
+    }
+    cout<<"Scheduler Running\n";
+    pause();
 
-	key_t process_page = ftok("progfile3", 65);
-	int process_page_id = shmget(process_page, k*sizeof(process_p), 0666|IPC_CREAT);
-	struct process *p_details = (struct process_p*)shmat(process_page_id, (void*)0,0);
 
-	for(int i=0;i<k;i++){
-		int mi = rand_bet(1,m);
-		int l = rand_bet(2*mi, 10*mi);
-		strcpy(Ri, get_prs(l,m));
+    //while(1);
+   // kill(pid_scheduler,SIGINT);
+    //kill(pid_MMU,SIGINT);
 
-		int p_i = fork();
-		if(p_i==0) {
-			execlp("./process", "./process", Ri, to_string(MQ1), to_string(MQ3), (char*)NULL);
-		}
-
-		p_details[i].pid = p_i;
-		p_details[i].index = i;
-		p_details[i].npr = mi;
-
-		usleep(250*1000);
-	}
-
-	signal(SIGUSR1, terminate_all);
-	pause();
-
-	return 0;
+    return 0;
 }
